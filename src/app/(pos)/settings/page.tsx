@@ -27,8 +27,18 @@ export default function SettingsPage() {
 
                 <Tabs defaultValue="basic" className="max-w-2xl">
                     <TabsList variant="line" className="mb-4 border-b border-white/10">
-                        <TabsTrigger value="basic">Basic Information</TabsTrigger>
-                        <TabsTrigger value="password">Change Password</TabsTrigger>
+                        <TabsTrigger
+                            value="basic"
+                            className="text-white after:bg-secondary hover:text-secondary data-active:text-white"
+                        >
+                            Basic Information
+                        </TabsTrigger>
+                        <TabsTrigger
+                            value="password"
+                            className="text-white after:bg-secondary hover:text-secondary data-active:text-white"
+                        >
+                            Change Password
+                        </TabsTrigger>
                     </TabsList>
                     <TabsContent value="basic">
                         <BasicInfoTab />

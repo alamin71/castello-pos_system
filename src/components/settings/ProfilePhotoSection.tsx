@@ -19,11 +19,11 @@ export function ProfilePhotoSection() {
                     <p className="text-lg font-semibold text-white">{user?.name}</p>
                     <p className="text-sm text-white/50">{user?.designation}</p>
                     <div className="mt-2 flex gap-4 text-sm">
-                        <button onClick={() => setChangeOpen(true)} className="font-medium text-secondary hover:underline">
+                        <button onClick={() => setChangeOpen(true)} className="font-medium text-white transition-colors hover:text-secondary">
                             Change Profile Photo
                         </button>
                         {user?.image && (
-                            <button onClick={() => setRemoveOpen(true)} className="font-medium text-white/50 hover:text-white">
+                            <button onClick={() => setRemoveOpen(true)} className="font-medium text-white transition-colors hover:text-secondary">
                                 Remove Profile Photo
                             </button>
                         )}

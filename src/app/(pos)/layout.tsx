@@ -12,12 +12,17 @@ export default function PosLayout({
 }) {
     const router = useRouter();
     const accessToken = useAuthStore((s) => s.accessToken);
+    const hasHydrated = useAuthStore((s) => s.hasHydrated);
 
     useEffect(() => {
-        if (!accessToken) router.replace("/login");
-    }, [accessToken, router]);
+        if (hasHydrated && !accessToken) router.replace("/login");
+    }, [hasHydrated, accessToken, router]);
 
-    if (!accessToken) return null;
+    // Wait for the persisted token to load before deciding anything — checking `accessToken`
+    // alone here would see its pre-hydration `null` default on a fresh navigation and bounce
+    // an already-logged-in user out to /login (which then bounces them back to "/" once the
+    // real token loads a tick later).
+    if (!hasHydrated || !accessToken) return null;
 
     return (
         <div className="flex h-screen bg-background">

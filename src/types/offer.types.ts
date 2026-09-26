@@ -1,23 +1,38 @@
-import type { Product } from "@/types/product.types";
+import type { CategoryRef } from "./category.types";
 
-export interface OfferSlotProductOption {
-  product: Product;
-  /** Restricts which of the product's variants this slot allows. Omitted = every variant. */
-  variantIds?: string[];
+export interface OfferCategoryRef {
+    _id: string;
+    offerCategoryId: string;
+    name: string;
 }
 
-export interface OfferSlot {
-  categoryName: string;
-  /** true = a single fixed item with no choice or toppings (e.g. "Breadsticks - Large"). */
-  isFixed: boolean;
-  products: OfferSlotProductOption[];
+export interface OfferItemProduct {
+    productId: string;
+    variantItemIds: string[];
+}
+
+export interface OfferItem {
+    categoryId: CategoryRef;
+    isFixed: boolean;
+    products: OfferItemProduct[];
 }
 
 export interface Offer {
-  id: string;
-  title: string;
-  description: string;
-  price: number;
-  image: string;
-  slots: OfferSlot[];
+    _id: string;
+    offerId: string;
+    offerCategoryId: OfferCategoryRef;
+    title: string;
+    description: string;
+    price: number;
+    mainImage: string;
+    gallery: string[];
+    offerItems: OfferItem[];
+}
+
+export interface ListOffersParams {
+    page?: number;
+    limit?: number;
+    searchTerm?: string;
+    status?: "active" | "inactive";
+    offerCategoryId?: string;
 }

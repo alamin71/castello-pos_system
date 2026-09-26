@@ -8,13 +8,22 @@ import { PaymentMethodPicker } from "@/components/payment/PaymentMethodPicker";
 import { CartLineDetails } from "@/components/create-order/CartLineDetails";
 import { cn } from "@/lib/utils";
 import { posCartLineTotal, posCartTotal, type PosCartLine } from "@/store/pos-cart.store";
-import type { OrderType, PaymentMethodId } from "@/types/order.types";
+import type { PaymentMethodId } from "@/types/order.types";
+import type { OrderTypeValue } from "@/types/orderPayload.types";
 
-const ORDER_TYPES: { id: OrderType; label: string }[] = [
-    { id: "dine-in", label: "Dine-In" },
-    { id: "take-away", label: "Take Away" },
-    { id: "delivery", label: "Delivery" },
+const ORDER_TYPES: { id: OrderTypeValue; label: string }[] = [
+    { id: "dine_in", label: "Dine-In" },
+    { id: "takeaway", label: "Take Away" },
+    { id: "home_delivery", label: "Delivery" },
 ];
+
+export interface CheckoutCustomerInfo {
+    isGuest: boolean;
+    name: string;
+    phone: string;
+    tableNumber: string;
+    deliveryAddress: string;
+}
 
 export function CheckoutView({
     orderId,
@@ -26,18 +35,46 @@ export function CheckoutView({
 }: {
     orderId: string;
     lines: PosCartLine[];
-    orderType: OrderType;
-    onOrderTypeChange: (type: OrderType) => void;
+    orderType: OrderTypeValue;
+    onOrderTypeChange: (type: OrderTypeValue) => void;
     onBack: () => void;
-    onProceed: (method: PaymentMethodId) => void;
+    onProceed: (method: PaymentMethodId, customer: CheckoutCustomerInfo) => void;
 }) {
     const [isGuest, setIsGuest] = useState(true);
+    const [name, setName] = useState("");
+    const [phone, setPhone] = useState("");
+    const [tableNumber, setTableNumber] = useState("");
+    const [deliveryAddress, setDeliveryAddress] = useState("");
     const [paymentMethod, setPaymentMethod] = useState<PaymentMethodId>("cash");
+    const [error, setError] = useState("");
 
     const subtotal = posCartTotal(lines);
     const tax = Math.round(subtotal * 0.11);
     const discount = 0;
     const total = subtotal + tax - discount;
+
+    function handleProceed() {
+        if (!isGuest && !name.trim()) {
+            setError("Customer name is required");
+            return;
+        }
+        if (orderType === "dine_in" && !tableNumber.trim()) {
+            setError("Table number is required for dine-in orders");
+            return;
+        }
+        if (orderType === "home_delivery" && !deliveryAddress.trim()) {
+            setError("Delivery address is required for delivery orders");
+            return;
+        }
+        setError("");
+        onProceed(paymentMethod, {
+            isGuest,
+            name: isGuest ? "Guest Customer" : name.trim(),
+            phone: phone.trim(),
+            tableNumber: tableNumber.trim(),
+            deliveryAddress: deliveryAddress.trim(),
+        });
+    }
 
     return (
         <div>
@@ -107,6 +144,30 @@ export function CheckoutView({
                         </div>
                     </div>
 
+                    {orderType === "dine_in" && (
+                        <div>
+                            <p className="mb-2 text-sm font-semibold text-white">Table Number</p>
+                            <Input
+                                value={tableNumber}
+                                onChange={(e) => setTableNumber(e.target.value)}
+                                placeholder="e.g. T4"
+                                className="h-11"
+                            />
+                        </div>
+                    )}
+
+                    {orderType === "home_delivery" && (
+                        <div>
+                            <p className="mb-2 text-sm font-semibold text-white">Delivery Address</p>
+                            <Input
+                                value={deliveryAddress}
+                                onChange={(e) => setDeliveryAddress(e.target.value)}
+                                placeholder="Enter delivery address"
+                                className="h-11"
+                            />
+                        </div>
+                    )}
+
                     <div>
                         <div className="mb-2 flex items-center justify-between">
                             <p className="text-sm font-semibold text-white">Customer Info</p>
@@ -131,12 +192,19 @@ export function CheckoutView({
                         {isGuest ? (
                             <Input value="Guest Customer" readOnly className="h-11" />
                         ) : (
-                            <div className="flex flex-col gap-2">
-                                <div className="grid grid-cols-2 gap-2">
-                                    <Input placeholder="Phone number" className="h-11" />
-                                    <Input placeholder="Name" className="h-11" />
-                                </div>
-                                <Input placeholder="Address" className="h-11" />
+                            <div className="grid grid-cols-2 gap-2">
+                                <Input
+                                    value={phone}
+                                    onChange={(e) => setPhone(e.target.value)}
+                                    placeholder="Phone number"
+                                    className="h-11"
+                                />
+                                <Input
+                                    value={name}
+                                    onChange={(e) => setName(e.target.value)}
+                                    placeholder="Name"
+                                    className="h-11"
+                                />
                             </div>
                         )}
                     </div>
@@ -175,8 +243,10 @@ export function CheckoutView({
                         <PaymentMethodPicker value={paymentMethod} onChange={setPaymentMethod} />
                     </div>
 
+                    {error && <p className="text-sm text-secondary">{error}</p>}
+
                     <Button
-                        onClick={() => onProceed(paymentMethod)}
+                        onClick={handleProceed}
                         disabled={lines.length === 0}
                         className="h-12 w-full bg-secondary text-base font-semibold text-white hover:bg-secondary/90"
                     >

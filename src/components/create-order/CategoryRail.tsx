@@ -1,14 +1,21 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import type { Category } from "@/types/product.types";
+
+export interface CategoryRailItem {
+    id: string;
+    name: string;
+    image?: string;
+    icon?: ReactNode;
+}
 
 export function CategoryRail({
     categories,
     activeId,
     onSelect,
 }: {
-    categories: Category[];
+    categories: CategoryRailItem[];
     activeId: string;
     onSelect: (id: string) => void;
 }) {
@@ -29,8 +36,13 @@ export function CategoryRail({
                                     : "border-transparent text-white/60 hover:text-white"
                             )}
                         >
-                            <span className="text-base">{category.icon}</span>
-                            {category.name}
+                            {category.image ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={category.image} alt="" className="size-5 shrink-0 rounded object-cover" />
+                            ) : (
+                                category.icon
+                            )}
+                            <span className="truncate">{category.name}</span>
                         </button>
                     );
                 })}

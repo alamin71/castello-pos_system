@@ -1,34 +1,46 @@
-import type { Product } from "@/types/product.types";
+import type { ToppingCategory } from "@/types/toppingCategory.types";
+import type { ToppingItem } from "@/types/toppingItem.types";
 import type { OrderItemTopping } from "@/types/order.types";
+import type { PizzaItem, Topping, ToppingGroup } from "./pizzaData";
 
-// ─── Runtime working types ──────────────────────────────────────────────────
-// Same shape/logic as Castello-web's src/main/Menu/toppingUtils.tsx — a topping
-// instance carries its own live `qty`, separate from the static catalog item.
-export interface Topping {
-    name: string;
-    price: number;
-    qty: number;
-    isDefault?: boolean;
-}
+// Builds the topping groups a given pizza/product slot should offer, from the real
+// topping-categories/topping-items catalog — `toppingCategoryIds` (undefined = every
+// category) picks which groups show, and `defaultToppings` (matched by real toppingItemId)
+// marks which items are pre-selected with their real price. Ported from Castello-web's
+// src/main/Menu/toppingUtils.tsx buildGroups, extended to carry each topping's real Mongo
+// `id` (needed by POST /orders — web's cart doesn't submit an order directly, POS does).
+export function buildGroups(
+    pizza: Pick<PizzaItem, "toppingCategoryIds" | "defaultToppings">,
+    toppingCategories: ToppingCategory[],
+    toppingItems: ToppingItem[]
+): ToppingGroup[] {
+    const relevantCategories =
+        pizza.toppingCategoryIds === undefined
+            ? toppingCategories
+            : toppingCategories.filter((c) => pizza.toppingCategoryIds!.includes(c.toppingCategoryId));
 
-export interface ToppingGroup {
-    label: string;
-    items: Topping[];
-}
+    const defaultMap = new Map((pizza.defaultToppings ?? []).map((d) => [d.toppingItemId, d.price]));
 
-// Builds a fresh, editable topping-group set for a product — defaults pre-selected at
-// qty 1, everything else starts at qty 0. Called once per half when a pizza is chosen,
-// and again by "Reset Toppings" to drop every customer change back to this preset.
-export function buildGroups(product: Pick<Product, "toppingGroups">): ToppingGroup[] {
-    return (product.toppingGroups ?? []).map((group) => ({
-        label: group.name,
-        items: group.items.map((item) => ({
-            name: item.name,
-            price: item.price,
-            qty: item.isDefault ? 1 : 0,
-            isDefault: item.isDefault,
-        })),
-    }));
+    return relevantCategories
+        .map((category) => ({
+            label: category.name,
+            items: toppingItems
+                .filter((item) => item.toppingCategoryId.toppingCategoryId === category.toppingCategoryId)
+                .map((item): Topping => {
+                    const isDefault = defaultMap.has(item.toppingItemId);
+                    const realPrice = defaultMap.get(item.toppingItemId);
+                    return {
+                        id: item._id,
+                        name: item.name,
+                        // Prefer the real backend price for this product's default toppings;
+                        // fall back to the topping catalog's own price for everything else.
+                        price: isDefault && realPrice != null ? realPrice : item.price,
+                        qty: isDefault ? 1 : 0,
+                        isDefault,
+                    };
+                }),
+        }))
+        .filter((group) => group.items.length > 0);
 }
 
 // Default toppings are already baked into the product's base price — removing one is
@@ -38,9 +50,33 @@ export const toppingsTotal = (groups: ToppingGroup[]) =>
     groups.reduce(
         (sum, g) =>
             sum +
-            g.items.reduce((s, t) => s + t.price * (t.isDefault ? Math.max(0, t.qty - 1) : t.qty), 0),
+            g.items.reduce(
+                (s, t) => s + t.price * (t.isDefault ? Math.max(0, t.qty - 1) : t.qty),
+                0
+            ),
         0
     );
+
+// Converts live topping groups into the request body shape POST /orders expects.
+export function toToppingSelections(groups: ToppingGroup[]): {
+    toppingSelections: { toppingItemId: string; quantity: number }[];
+    removedDefaultToppingItemIds: string[];
+} {
+    const toppingSelections: { toppingItemId: string; quantity: number }[] = [];
+    const removedDefaultToppingItemIds: string[] = [];
+
+    groups.forEach((group) => {
+        group.items.forEach((t) => {
+            if (t.isDefault && t.qty === 0) {
+                removedDefaultToppingItemIds.push(t.id);
+            } else if (t.qty > 0) {
+                toppingSelections.push({ toppingItemId: t.id, quantity: t.qty });
+            }
+        });
+    });
+
+    return { toppingSelections, removedDefaultToppingItemIds };
+}
 
 // Converts live topping groups into the flat chip list the cart/order-details views
 // already know how to render (OrderItemToppings), plus the "+N toppings / +price" summary.
@@ -185,7 +221,7 @@ export function ToppingGroupSection({
             <div className="grid grid-cols-2 gap-2">
                 {group.items.map((topping, ti) => (
                     <ToppingCard
-                        key={topping.name}
+                        key={topping.id}
                         topping={topping}
                         onInc={() => onInc(ti)}
                         onDec={() => onDec(ti)}

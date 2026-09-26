@@ -1,7 +1,7 @@
 export type OrderType = "dine-in" | "take-away" | "delivery";
 export type Platform = "POS" | "KIOSK" | "WEB";
 export type PaymentStatus = "paid" | "unpaid";
-export type PaymentMethodId = "teya" | "cash" | "card" | "gift-card";
+export type PaymentMethodId = "cash" | "card";
 
 export type OrderStatus =
   | "order-placed"
@@ -58,10 +58,8 @@ export interface Order {
 }
 
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethodId, string> = {
-  teya: "Teya",
   cash: "Cash",
   card: "Card Pay",
-  "gift-card": "Gift Card",
 };
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {

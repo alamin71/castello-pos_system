@@ -1,7 +1,8 @@
 "use client";
 
 import { create } from "zustand";
-import type { OrderItemTopping, OrderType } from "@/types/order.types";
+import type { OrderItemTopping } from "@/types/order.types";
+import type { OrderItemPayload, OrderTypeValue } from "@/types/orderPayload.types";
 
 export interface PosCartBundleSubItem {
   name: string;
@@ -29,12 +30,15 @@ export interface PosCartLine {
    * extra toppings add to `extraToppingsPrice`; picking a different product/variant per
    * slot never changes the line's price. */
   bundleItems?: PosCartBundleSubItem[];
+  /** Everything POST /orders needs for this line except `quantity`, which always comes
+   * from `qty` above so the cart's +/- stepper can't drift out of sync with the payload. */
+  orderPayload: Omit<OrderItemPayload, "quantity">;
 }
 
 interface PosCartState {
-  orderType: OrderType;
+  orderType: OrderTypeValue;
   lines: PosCartLine[];
-  setOrderType: (type: OrderType) => void;
+  setOrderType: (type: OrderTypeValue) => void;
   addLine: (line: Omit<PosCartLine, "id">) => void;
   updateQty: (id: string, qty: number) => void;
   removeLine: (id: string) => void;
@@ -42,7 +46,7 @@ interface PosCartState {
 }
 
 export const usePosCartStore = create<PosCartState>()((set) => ({
-  orderType: "dine-in",
+  orderType: "dine_in",
   lines: [],
   setOrderType: (orderType) => set({ orderType }),
   addLine: (line) =>
@@ -66,4 +70,8 @@ export function posCartLineTotal(line: PosCartLine) {
 
 export function posCartTotal(lines: PosCartLine[]) {
   return lines.reduce((sum, l) => sum + posCartLineTotal(l), 0);
+}
+
+export function toOrderItemsPayload(lines: PosCartLine[]): OrderItemPayload[] {
+  return lines.map((line) => ({ ...line.orderPayload, quantity: line.qty }));
 }

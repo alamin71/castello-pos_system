@@ -29,7 +29,7 @@ export function OrderDetailsView({
     onTakePayment: (method: PaymentMethodId) => void;
 }) {
     const [paymentMethod, setPaymentMethod] = useState<PaymentMethodId>(
-        order.paymentMethod ?? "teya"
+        order.paymentMethod ?? "cash"
     );
     const [prepMinutes, setPrepMinutes] = useState(5);
 

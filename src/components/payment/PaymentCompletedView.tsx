@@ -4,11 +4,15 @@ import { Check, Printer, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PAYMENT_METHOD_LABELS } from "@/types/order.types";
 import type { OrderType, PaymentMethodId, Platform } from "@/types/order.types";
+import type { OrderTypeValue } from "@/types/orderPayload.types";
 
-const ORDER_TYPE_LABELS: Record<OrderType, string> = {
+const ORDER_TYPE_LABELS: Record<OrderType | OrderTypeValue, string> = {
     "dine-in": "Dine-In",
     "take-away": "Take Away",
     delivery: "Delivery",
+    dine_in: "Dine-In",
+    takeaway: "Take Away",
+    home_delivery: "Delivery",
 };
 
 export function PaymentCompletedView({
@@ -25,7 +29,7 @@ export function PaymentCompletedView({
     onSendToKitchen,
 }: {
     orderId: string;
-    orderType: OrderType;
+    orderType: OrderType | OrderTypeValue;
     platform: Platform;
     paymentMethod: PaymentMethodId;
     totalBill: number;

@@ -12,4 +12,15 @@ export const API = {
     kitchen: {
         queue: "/kitchen/queue",
     },
+    menu: {
+        categories: "/admin/menu/categories",
+        products: "/admin/menu/products",
+    },
+    toppings: {
+        categories: "/admin/menu/toppings/categories",
+        items: "/admin/menu/toppings/items",
+    },
+    promotions: {
+        offers: "/admin/promotions/offers",
+    },
 };

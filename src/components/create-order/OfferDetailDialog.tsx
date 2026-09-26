@@ -11,50 +11,75 @@ import {
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { OrderItemToppings } from "@/components/orders/OrderItemToppings";
-import {
-    buildGroups,
-    toOrderItemToppings,
-    toppingsTotal,
-    ToppingGroupSection,
-    type ToppingGroup,
-} from "@/lib/toppingUtils";
-import type { Offer, OfferSlot, OfferSlotProductOption } from "@/types/offer.types";
-import type { ProductVariant } from "@/types/product.types";
+import { buildGroups, toOrderItemToppings, toToppingSelections, toppingsTotal, ToppingGroupSection } from "@/lib/toppingUtils";
+import type { ToppingGroup } from "@/lib/pizzaData";
+import { useOffer } from "@/hooks/queries/useOffer";
+import { useProducts } from "@/hooks/queries/useProducts";
+import { useCategories } from "@/hooks/queries/useCategories";
+import { useToppingCategories } from "@/hooks/queries/useToppingCategories";
+import { useToppingItems } from "@/hooks/queries/useToppingItems";
+import type { Product } from "@/types/product.types";
+import type { Category } from "@/types/category.types";
+import type { ToppingCategory } from "@/types/toppingCategory.types";
+import type { ToppingItem } from "@/types/toppingItem.types";
+import type { OfferDetail } from "@/types/offerDetail.types";
+import type {
+    OfferItemDetail,
+    OfferItemProductRef,
+    OfferItemVariantRef,
+} from "@/types/offerDetail.types";
 import type { PosCartLine } from "@/store/pos-cart.store";
+import type { BundleSelectionPayload } from "@/types/orderPayload.types";
 
 interface SlotSelection {
-    productIndex: number;
-    variantIndex: number;
+    product: OfferItemProductRef;
+    variant: OfferItemVariantRef | null;
     groups: ToppingGroup[];
 }
 
-function getSlotVariants(option: OfferSlotProductOption): ProductVariant[] {
-    if (!option.variantIds) return option.product.variants;
-    return option.product.variants.filter((v) => option.variantIds!.includes(v.id));
+function slotRequiresChoice(item: OfferItemDetail): boolean {
+    const first = item.products[0];
+    return item.products.length > 1 || (first?.variantItemIds.length ?? 0) > 1;
 }
 
-function slotRequiresChoice(slot: OfferSlot): boolean {
-    const first = slot.products[0];
-    return slot.products.length > 1 || (first ? getSlotVariants(first).length > 1 : false);
-}
-
-function defaultSlotSelection(slot: OfferSlot): SlotSelection | null {
-    const first = slot.products[0];
-    if (!first) return null;
-    return { productIndex: 0, variantIndex: 0, groups: buildGroups(first.product) };
+function buildSlotGroups(
+    productRef: OfferItemProductRef,
+    products: Product[],
+    toppingCategories: ToppingCategory[],
+    toppingItems: ToppingItem[]
+): ToppingGroup[] {
+    const real = products.find((p) => p._id === productRef._id);
+    if (!real) return [];
+    return buildGroups(
+        {
+            toppingCategoryIds: real.toppingCategoryIds.map((c) => c.toppingCategoryId),
+            defaultToppings: real.defaultToppingItemIds.map((t) => ({
+                toppingItemId: t.toppingItemId,
+                price: t.price,
+            })),
+        },
+        toppingCategories,
+        toppingItems
+    );
 }
 
 export function OfferDetailDialog({
-    offer,
+    offerId,
     open,
     onOpenChange,
     onAddToCart,
 }: {
-    offer: Offer | null;
+    offerId: string | null;
     open: boolean;
     onOpenChange: (open: boolean) => void;
     onAddToCart: (line: Omit<PosCartLine, "id">) => void;
 }) {
+    const { data: offer } = useOffer(open ? offerId ?? undefined : undefined);
+    const { data: products } = useProducts();
+    const { data: categories } = useCategories();
+    const { data: toppingCategories } = useToppingCategories();
+    const { data: toppingItems } = useToppingItems();
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogTitle className="sr-only">{offer?.title ?? "Offer"}</DialogTitle>
@@ -62,8 +87,12 @@ export function OfferDetailDialog({
             <DialogContent className="flex max-h-[85vh] w-11/12 max-w-lg flex-col border border-white/10 bg-[#1c1c1c] p-0 text-white">
                 {offer && open && (
                     <OfferDetailBody
-                        key={offer.id}
+                        key={offer._id}
                         offer={offer}
+                        products={products ?? []}
+                        categories={categories ?? []}
+                        toppingCategories={toppingCategories ?? []}
+                        toppingItems={toppingItems ?? []}
                         onAddToCart={(line) => {
                             onAddToCart(line);
                             onOpenChange(false);
@@ -77,39 +106,63 @@ export function OfferDetailDialog({
 
 function OfferDetailBody({
     offer,
+    products,
+    categories,
+    toppingCategories,
+    toppingItems,
     onAddToCart,
 }: {
-    offer: Offer;
+    offer: OfferDetail;
+    products: Product[];
+    categories: Category[];
+    toppingCategories: ToppingCategory[];
+    toppingItems: ToppingItem[];
     onAddToCart: (line: Omit<PosCartLine, "id">) => void;
 }) {
     const [qty, setQty] = useState(1);
     const [explicitSelections, setExplicitSelections] = useState<Record<number, SlotSelection>>({});
     const [activeSlot, setActiveSlot] = useState<number | null>(null);
-    const [draft, setDraft] = useState<SlotSelection | null>(null);
+    const [draft, setDraft] = useState<{ productIndex: number; variantIndex: number; groups: ToppingGroup[] } | null>(null);
 
-    function getSlotSelection(slot: OfferSlot, index: number): SlotSelection | null {
+    const slotGroupsFor = (productRef: OfferItemProductRef) =>
+        buildSlotGroups(productRef, products, toppingCategories, toppingItems);
+
+    const getSlotSelection = (item: OfferItemDetail, index: number): SlotSelection | null => {
         if (explicitSelections[index]) return explicitSelections[index];
-        if (slotRequiresChoice(slot)) return null;
-        return defaultSlotSelection(slot);
-    }
+        if (slotRequiresChoice(item)) return null;
+        const first = item.products[0];
+        if (!first) return null;
+        return {
+            product: first.productId,
+            variant: first.variantItemIds[0] ?? null,
+            groups: slotGroupsFor(first.productId),
+        };
+    };
 
-    const slotSelections = offer.slots.map(getSlotSelection);
-    // Choosing a different product/variant within a slot never changes the price — only
-    // extra/added toppings add on top of the offer's flat price.
+    const slotSelections = offer.offerItems.map(getSlotSelection);
+    // Choosing a different product or variant within a slot never changes the price — the
+    // offer's flat price already covers any listed alternative. Only extra/added toppings add on top.
     const toppingsSum = slotSelections.reduce((sum, sel) => sum + (sel ? toppingsTotal(sel.groups) : 0), 0);
     const total = (offer.price + toppingsSum) * qty;
     const canAddToCart = slotSelections.every((sel) => sel !== null);
 
     function openSlot(index: number) {
-        const slot = offer.slots[index];
-        const current = getSlotSelection(slot, index);
-        setDraft(
-            current ?? {
-                productIndex: 0,
-                variantIndex: 0,
-                groups: buildGroups(slot.products[0].product),
-            }
-        );
+        const item = offer.offerItems[index];
+        const current = getSlotSelection(item, index);
+        const productIndex = current
+            ? item.products.findIndex((p) => p.productId._id === current.product._id)
+            : 0;
+        const resolvedProductIndex = productIndex === -1 ? 0 : productIndex;
+        const productOption = item.products[resolvedProductIndex];
+        const variantIndex = current?.variant
+            ? productOption.variantItemIds.findIndex((v) => v._id === current.variant?._id)
+            : 0;
+
+        setDraft({
+            productIndex: resolvedProductIndex,
+            variantIndex: variantIndex === -1 ? 0 : variantIndex,
+            groups: current?.groups ?? slotGroupsFor(productOption.productId),
+        });
         setActiveSlot(index);
     }
 
@@ -120,8 +173,8 @@ function OfferDetailBody({
 
     function selectDraftProduct(productIndex: number) {
         if (activeSlot === null) return;
-        const option = offer.slots[activeSlot].products[productIndex];
-        setDraft({ productIndex, variantIndex: 0, groups: buildGroups(option.product) });
+        const productOption = offer.offerItems[activeSlot].products[productIndex];
+        setDraft({ productIndex, variantIndex: 0, groups: slotGroupsFor(productOption.productId) });
     }
 
     function updateDraftQty(gi: number, ti: number, delta: number) {
@@ -149,50 +202,73 @@ function OfferDetailBody({
 
     function resetDraftToppings() {
         if (activeSlot === null || !draft) return;
-        const option = offer.slots[activeSlot].products[draft.productIndex];
-        setDraft((prev) => (prev ? { ...prev, groups: buildGroups(option.product) } : prev));
+        const productOption = offer.offerItems[activeSlot].products[draft.productIndex];
+        setDraft((prev) => (prev ? { ...prev, groups: slotGroupsFor(productOption.productId) } : prev));
     }
 
     function confirmSlot() {
         if (activeSlot === null || !draft) return;
-        setExplicitSelections((prev) => ({ ...prev, [activeSlot]: draft }));
+        const item = offer.offerItems[activeSlot];
+        const productOption = item.products[draft.productIndex];
+        setExplicitSelections((prev) => ({
+            ...prev,
+            [activeSlot]: {
+                product: productOption.productId,
+                variant: productOption.variantItemIds[draft.variantIndex] ?? null,
+                groups: draft.groups,
+            },
+        }));
         closeSlot();
     }
 
     function handleAddToCart() {
         if (!canAddToCart) return;
-        const bundleItems = offer.slots.flatMap((slot, i) => {
+
+        const bundleItems: NonNullable<PosCartLine["bundleItems"]> = [];
+        const bundleSelections: BundleSelectionPayload[] = [];
+
+        offer.offerItems.forEach((item, i) => {
+            if (item.isFixed) return; // backend auto-includes fixed slots server-side
             const sel = slotSelections[i];
-            if (!sel) return [];
-            const option = slot.products[sel.productIndex];
-            const variants = getSlotVariants(option);
+            if (!sel) return;
             const { toppings, extraCount, extraPrice } = toOrderItemToppings(sel.groups);
-            return [
-                {
-                    name: option.product.name,
-                    variantLabel: variants[sel.variantIndex]?.label,
-                    toppings: toppings.length ? toppings : undefined,
-                    extraToppingsCount: extraCount || undefined,
-                    extraToppingsPrice: extraPrice || undefined,
-                },
-            ];
+            const { toppingSelections, removedDefaultToppingItemIds } = toToppingSelections(sel.groups);
+
+            bundleItems.push({
+                name: sel.product.name,
+                variantLabel: sel.variant?.name,
+                toppings: toppings.length ? toppings : undefined,
+                extraToppingsCount: extraCount || undefined,
+                extraToppingsPrice: extraPrice || undefined,
+            });
+            bundleSelections.push({
+                slotIndex: i,
+                productId: sel.product._id,
+                variantItemId: sel.variant?._id,
+                toppingSelections,
+                removedDefaultToppingItemIds,
+            });
         });
 
         onAddToCart({
-            productId: offer.id,
+            productId: offer._id,
             name: offer.title,
             variantLabel: "",
-            image: offer.image,
+            image: offer.mainImage,
             qty,
             unitPrice: offer.price,
             extraToppingsPrice: toppingsSum || undefined,
-            bundleItems,
+            bundleItems: bundleItems.length ? bundleItems : undefined,
+            orderPayload: {
+                type: "offer",
+                offerId: offer._id,
+                bundleSelections: bundleSelections.length ? bundleSelections : undefined,
+            },
         });
     }
 
-    const activeItem = activeSlot !== null ? offer.slots[activeSlot] : undefined;
+    const activeItem = activeSlot !== null ? offer.offerItems[activeSlot] : undefined;
     const activeOption = activeItem && draft ? activeItem.products[draft.productIndex] : undefined;
-    const activeVariants = activeOption ? getSlotVariants(activeOption) : [];
 
     if (activeItem && draft && activeOption) {
         return (
@@ -205,7 +281,7 @@ function OfferDetailBody({
                         <ArrowLeft className="size-4" />
                     </button>
                     <div>
-                        <p className="text-sm font-bold text-white">Choose {activeItem.categoryName}</p>
+                        <p className="text-sm font-bold text-white">Choose {activeItem.categoryId.name}</p>
                         <p className="text-xs text-white/40">
                             Choose one{draft.groups.length > 0 ? ", you can also customize toppings" : ""}
                         </p>
@@ -218,32 +294,35 @@ function OfferDetailBody({
                             <div className="flex gap-2 overflow-x-auto">
                                 {activeItem.products.map((option, pi) => (
                                     <button
-                                        key={option.product.id}
+                                        key={option.productId._id}
                                         onClick={() => selectDraftProduct(pi)}
                                         className={`flex w-20 shrink-0 flex-col items-center gap-1.5 rounded-xl border p-2 text-center transition-colors ${pi === draft.productIndex ? "border-secondary" : "border-white/15 hover:border-white/30"
                                             }`}
                                     >
-                                        <div className="flex size-12 items-center justify-center rounded-lg bg-white/5 text-2xl">
-                                            {option.product.image}
-                                        </div>
-                                        <p className="line-clamp-2 text-xs font-medium text-white">{option.product.name}</p>
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img
+                                            src={option.productId.mainImage}
+                                            alt={option.productId.name}
+                                            className="size-12 rounded-lg bg-white/5 object-contain"
+                                        />
+                                        <p className="line-clamp-2 text-xs font-medium text-white">{option.productId.name}</p>
                                     </button>
                                 ))}
                             </div>
                         )}
 
-                        {activeVariants.length > 1 && (
+                        {activeOption.variantItemIds.length > 1 && (
                             <div>
                                 <p className="mb-2 text-sm font-semibold text-white">Variants</p>
                                 <div className="grid grid-cols-3 gap-2">
-                                    {activeVariants.map((v, vi) => (
+                                    {activeOption.variantItemIds.map((v, vi) => (
                                         <button
-                                            key={v.id}
+                                            key={v._id}
                                             onClick={() => setDraft((prev) => (prev ? { ...prev, variantIndex: vi } : prev))}
                                             className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${draft.variantIndex === vi ? "border-secondary text-white" : "border-white/10 text-white/60 hover:border-white/30"
                                                 }`}
                                         >
-                                            {v.label}
+                                            {v.name}
                                         </button>
                                     ))}
                                 </div>
@@ -296,26 +375,28 @@ function OfferDetailBody({
             <ScrollArea className="flex-1">
                 <div className="flex flex-col gap-5 p-5">
                     <div className="flex items-center justify-center">
-                        <div className="flex size-32 items-center justify-center rounded-full bg-white/5 text-6xl">
-                            {offer.image}
-                        </div>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={offer.mainImage} alt={offer.title} className="size-32 rounded-full bg-white/5 object-contain p-2" />
                     </div>
 
                     <div>
                         <p className="mb-3 text-sm font-semibold text-white">Offer Items</p>
                         <div className="flex flex-col gap-3">
-                            {offer.slots.map((slot, i) => {
+                            {offer.offerItems.map((item, i) => {
                                 const sel = slotSelections[i];
-                                const customizable = slotRequiresChoice(slot) || (sel?.groups.length ?? 0) > 0;
+                                const customizable = slotRequiresChoice(item) || (sel?.groups.length ?? 0) > 0;
+                                const category = categories.find((c) => c.categoryId === item.categoryId.categoryId);
 
                                 if (!customizable) {
-                                    const option = slot.products[sel?.productIndex ?? 0];
                                     return (
                                         <div key={i} className="flex items-center gap-3 rounded-xl border border-white/10 px-4 py-3">
-                                            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-white/5 text-xl">
-                                                {option.product.image}
-                                            </div>
-                                            <p className="text-sm font-semibold text-white">{option.product.name}</p>
+                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                            <img
+                                                src={sel?.product.mainImage || category?.image}
+                                                alt={sel?.product.name ?? item.categoryId.name}
+                                                className="size-10 shrink-0 rounded-lg bg-white/5 object-contain"
+                                            />
+                                            <p className="text-sm font-semibold text-white">{sel?.product.name ?? item.categoryId.name}</p>
                                         </div>
                                     );
                                 }
@@ -327,24 +408,20 @@ function OfferDetailBody({
                                             onClick={() => openSlot(i)}
                                             className="flex w-full items-center justify-between rounded-xl border border-white/15 px-4 py-3 text-left hover:border-white/30"
                                         >
-                                            <p className="text-sm font-semibold text-white">{slot.categoryName}</p>
+                                            <p className="text-sm font-semibold text-white">{item.categoryId.name}</p>
                                             <ChevronRight className="size-4 shrink-0 text-white/40" />
                                         </button>
                                     );
                                 }
 
-                                const option = slot.products[sel.productIndex];
-                                const variants = getSlotVariants(option);
                                 const { toppings, extraCount, extraPrice } = toOrderItemToppings(sel.groups);
 
                                 return (
                                     <div key={i} className="rounded-xl border border-white/15">
                                         <div className="flex items-center justify-between gap-3 px-4 py-3">
                                             <p className="truncate text-sm font-semibold text-white">
-                                                {option.product.name}
-                                                {variants[sel.variantIndex] && (
-                                                    <span className="text-white/40"> / {variants[sel.variantIndex].label}</span>
-                                                )}
+                                                {sel.product.name}
+                                                {sel.variant && <span className="text-white/40"> / {sel.variant.name}</span>}
                                             </p>
                                             <button
                                                 onClick={() => openSlot(i)}
@@ -355,12 +432,7 @@ function OfferDetailBody({
                                             </button>
                                         </div>
                                         {toppings.length > 0 && (
-                                            <OrderItemToppings
-                                                toppings={toppings}
-                                                extraCount={extraCount}
-                                                extraPrice={extraPrice}
-                                                className="px-4 pb-3"
-                                            />
+                                            <OrderItemToppings toppings={toppings} extraCount={extraCount} extraPrice={extraPrice} className="px-4 pb-3" />
                                         )}
                                     </div>
                                 );

@@ -3,7 +3,8 @@
 import type { Product } from "@/types/product.types";
 
 function priceRangeLabel(product: Product) {
-    const prices = product.variants.map((v) => v.price);
+    const prices = product.type === "variant" ? product.variants.map((v) => v.price) : [product.price ?? 0];
+    if (prices.length === 0) return "";
     const min = Math.min(...prices);
     const max = Math.max(...prices);
     if (min === max) return `${min.toLocaleString()} kr.`;
@@ -21,12 +22,13 @@ export function ProductGrid({
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
             {products.map((product) => (
                 <button
-                    key={product.id}
+                    key={product._id}
                     onClick={() => onSelect(product)}
                     className="flex flex-col overflow-hidden rounded-xl bg-white/5 text-left transition-colors hover:bg-white/10"
                 >
-                    <div className="flex h-28 items-center justify-center bg-white/5 text-5xl">
-                        {product.image}
+                    <div className="flex h-28 items-center justify-center bg-white/5">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={product.mainImage} alt={product.name} className="h-full w-full object-contain p-3" />
                     </div>
                     <div className="p-3">
                         <p className="text-sm font-medium text-white">{product.name}</p>
@@ -34,6 +36,9 @@ export function ProductGrid({
                     </div>
                 </button>
             ))}
+            {products.length === 0 && (
+                <p className="col-span-full py-10 text-center text-sm text-white/30">No products in this category</p>
+            )}
         </div>
     );
 }
